@@ -1,0 +1,37 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Environment variables
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# Database (SQLite)
+*.db
+*.db-journal
+*.db-wal
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Temporary scripts
+fix_flow.go
+inspect_db.go

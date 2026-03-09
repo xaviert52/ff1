@@ -1,0 +1,993 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "API for managing connectors and executing flows step-by-step.",
+        "title": "Extended Flow Management System API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "API Support",
+            "url": "http://www.swagger.io/support",
+            "email": "support@swagger.io"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/ai/generate": {
+            "post": {
+                "description": "Uses AI to convert a text description into a structured Flow definition, suggesting Connectors and identifying missing information.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ai"
+                ],
+                "summary": "Generate a Flow from Natural Language",
+                "parameters": [
+                    {
+                        "description": "Natural Language Prompt",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.GenerateFlowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.GenerateFlowResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/connectors": {
+            "get": {
+                "description": "Get a list of all registered connectors",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "List all connectors",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.Connector"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Register a new external service. The 'schema' field defines the input contract, and 'policy' defines resilience settings.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "Create a new connector",
+                "parameters": [
+                    {
+                        "description": "Connector definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateConnectorRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Connector"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/connectors/config": {
+            "post": {
+                "description": "Configure environment-specific secrets (e.g., API keys) for a connector.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "Create connector configuration",
+                "parameters": [
+                    {
+                        "description": "Connector Secrets",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateConnectorConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.ConnectorConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/executions/{uuid}": {
+            "get": {
+                "description": "Get full details of an execution including data and steps history",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "execution"
+                ],
+                "summary": "Get execution details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Execution UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Execution"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/executions/{uuid}/retry": {
+            "post": {
+                "description": "Retry a failed execution from the current step, optionally updating input data",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "execution"
+                ],
+                "summary": "Retry a failed execution",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Execution UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New Input Data to merge",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Execution"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/executions/{uuid}/step": {
+            "get": {
+                "description": "Get the definition and JSON schema for the current step. Use this to render the form on the frontend.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "execution"
+                ],
+                "summary": "Get current step definition",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Execution UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Step"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Validate and submit data for the current step. If successful, advances the flow to the next step.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "execution"
+                ],
+                "summary": "Submit step data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Execution UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Form Data matching the step schema",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.SubmitStepRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Execution"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/flows": {
+            "get": {
+                "description": "Get a list of all available flow definitions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "flow-management"
+                ],
+                "summary": "List all flows",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/domain.Flow"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Define a new flow with its steps, schema, and transitions. The 'definition' field must follow the FlowDefinition structure.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "flow-management"
+                ],
+                "summary": "Create a new Flow Definition",
+                "parameters": [
+                    {
+                        "description": "Flow Definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CreateFlowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Flow"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/flows/{id}/start": {
+            "post": {
+                "description": "Start a new instance of a flow. Returns the Execution ID (UUID) needed for subsequent steps.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "execution"
+                ],
+                "summary": "Start a flow execution",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Flow ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Initial input parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.StartFlowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/domain.Execution"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "domain.AuthType": {
+            "type": "string",
+            "enum": [
+                "NONE",
+                "API_KEY",
+                "OAUTH2"
+            ],
+            "x-enum-varnames": [
+                "AuthTypeNone",
+                "AuthTypeAPIKey",
+                "AuthTypeOAuth2"
+            ]
+        },
+        "domain.Connector": {
+            "type": "object",
+            "properties": {
+                "auth_type": {
+                    "$ref": "#/definitions/domain.AuthType"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "policy": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "max_retries": "3",
+                        "timeout_ms": "5000"
+                    }
+                },
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "properties": "{name:{type:string}}",
+                        "required": "[name]",
+                        "type": "object"
+                    }
+                },
+                "type": {
+                    "$ref": "#/definitions/domain.ConnectorType"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ConnectorConfig": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "api_key": "secret_key"
+                    }
+                },
+                "connector_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "environment": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ConnectorType": {
+            "type": "string",
+            "enum": [
+                "REST",
+                "SOAP"
+            ],
+            "x-enum-varnames": [
+                "ConnectorTypeREST",
+                "ConnectorTypeSOAP"
+            ]
+        },
+        "domain.Execution": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "data": {
+                    "description": "Accumulated data",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "flow_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "description": "UUID",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/domain.ExecutionStatus"
+                },
+                "steps_data": {
+                    "description": "Map[StepID]Output",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.ExecutionStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "RUNNING",
+                "WAITING",
+                "COMPLETED",
+                "FAILED",
+                "SUSPENDED"
+            ],
+            "x-enum-comments": {
+                "StatusSuspended": "Waiting for async callback",
+                "StatusWaiting": "Waiting for user input"
+            },
+            "x-enum-descriptions": [
+                "",
+                "",
+                "Waiting for user input",
+                "",
+                "",
+                "Waiting for async callback"
+            ],
+            "x-enum-varnames": [
+                "StatusPending",
+                "StatusRunning",
+                "StatusWaiting",
+                "StatusCompleted",
+                "StatusFailed",
+                "StatusSuspended"
+            ]
+        },
+        "domain.Flow": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "definition": {
+                    "description": "Stores FlowDefinition",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "next_step": "step2}}",
+                        "start_step": "step1",
+                        "steps": "{step1:{id:step1",
+                        "type": "FORM"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "domain.FlowDefinition": {
+            "type": "object",
+            "properties": {
+                "start_step": {
+                    "type": "string",
+                    "example": "personal_info"
+                },
+                "steps": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/domain.Step"
+                    }
+                }
+            }
+        },
+        "domain.Step": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "description": "Connector/Action config",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "param1": "value1"
+                    }
+                },
+                "connector_id": {
+                    "description": "For ACTION steps",
+                    "type": "integer",
+                    "example": 1
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Collect personal details"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "personal_info"
+                },
+                "input_mapping": {
+                    "description": "Field mapping",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "param1": "{{steps.step1.data.param1}}"
+                    }
+                },
+                "next_step": {
+                    "description": "Simple transition",
+                    "type": "string",
+                    "example": "next_step_id"
+                },
+                "schema": {
+                    "description": "JSON Schema for FORM input",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "properties": "{name:{type:string}}",
+                        "required": "[name]",
+                        "type": "object"
+                    }
+                },
+                "transitions": {
+                    "description": "Conditional transitions",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Transition"
+                    }
+                },
+                "type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/domain.StepType"
+                        }
+                    ],
+                    "example": "FORM"
+                }
+            }
+        },
+        "domain.StepType": {
+            "type": "string",
+            "enum": [
+                "FORM",
+                "ACTION",
+                "DECISION"
+            ],
+            "x-enum-comments": {
+                "StepTypeAction": "Automated task/connector",
+                "StepTypeDecision": "Conditional logic",
+                "StepTypeForm": "Human input"
+            },
+            "x-enum-descriptions": [
+                "Human input",
+                "Automated task/connector",
+                "Conditional logic"
+            ],
+            "x-enum-varnames": [
+                "StepTypeForm",
+                "StepTypeAction",
+                "StepTypeDecision"
+            ]
+        },
+        "domain.Transition": {
+            "type": "object",
+            "properties": {
+                "condition": {
+                    "description": "Simple expression or key",
+                    "type": "string",
+                    "example": "age \u003e= 18"
+                },
+                "next_step": {
+                    "type": "string",
+                    "example": "adult_step"
+                }
+            }
+        },
+        "dto.ConnectorPolicy": {
+            "type": "object",
+            "properties": {
+                "max_retries": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "retry_backoff_ms": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "example": 5000
+                }
+            }
+        },
+        "dto.CreateConnectorConfigRequest": {
+            "type": "object",
+            "required": [
+                "connector_id",
+                "environment"
+            ],
+            "properties": {
+                "config": {
+                    "description": "Config contains sensitive data like API keys or specific headers",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "api_key": "sk_live_123456",
+                        "client_secret": "abcde"
+                    }
+                },
+                "connector_id": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "environment": {
+                    "type": "string",
+                    "example": "production"
+                }
+            }
+        },
+        "dto.CreateConnectorRequest": {
+            "type": "object",
+            "required": [
+                "auth_type",
+                "name",
+                "type"
+            ],
+            "properties": {
+                "auth_type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/domain.AuthType"
+                        }
+                    ],
+                    "example": "API_KEY"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.pdf-service.com/v1"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "PDF Generator Service"
+                },
+                "policy": {
+                    "description": "Policy defines resilience settings: timeouts, retries, etc.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/dto.ConnectorPolicy"
+                        }
+                    ]
+                },
+                "schema": {
+                    "description": "Schema defines the expected input parameters for this connector using JSON Schema\nThis tells the flow designer what data is needed to call this service (e.g., template_id, user_data)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "properties": "{template_id:{type:string}",
+                        "required": "[template_id]",
+                        "type": "object",
+                        "user_data": "{type:object}}"
+                    }
+                },
+                "type": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/domain.ConnectorType"
+                        }
+                    ],
+                    "example": "REST"
+                }
+            }
+        },
+        "dto.CreateFlowRequest": {
+            "type": "object",
+            "required": [
+                "definition",
+                "name"
+            ],
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/domain.FlowDefinition"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Employee onboarding flow with document verification"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Onboarding Process"
+                }
+            }
+        },
+        "dto.GenerateFlowRequest": {
+            "type": "object",
+            "required": [
+                "prompt"
+            ],
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "example": "Create a flow that asks for email and sends a welcome message using the REST connector"
+                }
+            }
+        },
+        "dto.GenerateFlowResponse": {
+            "type": "object",
+            "properties": {
+                "connectors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/domain.Connector"
+                    }
+                },
+                "explanation": {
+                    "type": "string"
+                },
+                "flow": {
+                    "$ref": "#/definitions/domain.Flow"
+                },
+                "missing_info": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "dto.StartFlowRequest": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "campaign_id": "summer_2024",
+                        "referrer": "web_portal"
+                    }
+                }
+            }
+        },
+        "dto.SubmitStepRequest": {
+            "type": "object",
+            "required": [
+                "data"
+            ],
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "age": "30",
+                        "email": "john@example.com",
+                        "name": "John Doe"
+                    }
+                }
+            }
+        }
+    }
+}

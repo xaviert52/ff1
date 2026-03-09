@@ -1,0 +1,685 @@
+basePath: /api/v1
+definitions:
+  domain.AuthType:
+    enum:
+    - NONE
+    - API_KEY
+    - OAUTH2
+    type: string
+    x-enum-varnames:
+    - AuthTypeNone
+    - AuthTypeAPIKey
+    - AuthTypeOAuth2
+  domain.Connector:
+    properties:
+      auth_type:
+        $ref: '#/definitions/domain.AuthType'
+      base_url:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      policy:
+        additionalProperties:
+          type: string
+        example:
+          max_retries: "3"
+          timeout_ms: "5000"
+        type: object
+      schema:
+        additionalProperties:
+          type: string
+        example:
+          properties: '{name:{type:string}}'
+          required: '[name]'
+          type: object
+        type: object
+      type:
+        $ref: '#/definitions/domain.ConnectorType'
+      updated_at:
+        type: string
+    type: object
+  domain.ConnectorConfig:
+    properties:
+      config:
+        additionalProperties:
+          type: string
+        example:
+          api_key: secret_key
+        type: object
+      connector_id:
+        type: integer
+      created_at:
+        type: string
+      environment:
+        type: string
+      id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  domain.ConnectorType:
+    enum:
+    - REST
+    - SOAP
+    type: string
+    x-enum-varnames:
+    - ConnectorTypeREST
+    - ConnectorTypeSOAP
+  domain.Execution:
+    properties:
+      created_at:
+        type: string
+      current_step:
+        type: string
+      data:
+        additionalProperties:
+          type: string
+        description: Accumulated data
+        type: object
+      flow_id:
+        type: integer
+      id:
+        description: UUID
+        type: string
+      status:
+        $ref: '#/definitions/domain.ExecutionStatus'
+      steps_data:
+        additionalProperties:
+          type: string
+        description: Map[StepID]Output
+        type: object
+      updated_at:
+        type: string
+    type: object
+  domain.ExecutionStatus:
+    enum:
+    - PENDING
+    - RUNNING
+    - WAITING
+    - COMPLETED
+    - FAILED
+    - SUSPENDED
+    type: string
+    x-enum-comments:
+      StatusSuspended: Waiting for async callback
+      StatusWaiting: Waiting for user input
+    x-enum-descriptions:
+    - ""
+    - ""
+    - Waiting for user input
+    - ""
+    - ""
+    - Waiting for async callback
+    x-enum-varnames:
+    - StatusPending
+    - StatusRunning
+    - StatusWaiting
+    - StatusCompleted
+    - StatusFailed
+    - StatusSuspended
+  domain.Flow:
+    properties:
+      created_at:
+        type: string
+      definition:
+        additionalProperties:
+          type: string
+        description: Stores FlowDefinition
+        example:
+          next_step: step2}}
+          start_step: step1
+          steps: '{step1:{id:step1'
+          type: FORM
+        type: object
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  domain.FlowDefinition:
+    properties:
+      start_step:
+        example: personal_info
+        type: string
+      steps:
+        additionalProperties:
+          $ref: '#/definitions/domain.Step'
+        type: object
+    type: object
+  domain.Step:
+    properties:
+      config:
+        additionalProperties:
+          type: string
+        description: Connector/Action config
+        example:
+          param1: value1
+        type: object
+      connector_id:
+        description: For ACTION steps
+        example: 1
+        type: integer
+      description:
+        example: Collect personal details
+        type: string
+      id:
+        example: personal_info
+        type: string
+      input_mapping:
+        additionalProperties:
+          type: string
+        description: Field mapping
+        example:
+          param1: '{{steps.step1.data.param1}}'
+        type: object
+      next_step:
+        description: Simple transition
+        example: next_step_id
+        type: string
+      schema:
+        additionalProperties:
+          type: string
+        description: JSON Schema for FORM input
+        example:
+          properties: '{name:{type:string}}'
+          required: '[name]'
+          type: object
+        type: object
+      transitions:
+        description: Conditional transitions
+        items:
+          $ref: '#/definitions/domain.Transition'
+        type: array
+      type:
+        allOf:
+        - $ref: '#/definitions/domain.StepType'
+        example: FORM
+    type: object
+  domain.StepType:
+    enum:
+    - FORM
+    - ACTION
+    - DECISION
+    type: string
+    x-enum-comments:
+      StepTypeAction: Automated task/connector
+      StepTypeDecision: Conditional logic
+      StepTypeForm: Human input
+    x-enum-descriptions:
+    - Human input
+    - Automated task/connector
+    - Conditional logic
+    x-enum-varnames:
+    - StepTypeForm
+    - StepTypeAction
+    - StepTypeDecision
+  domain.Transition:
+    properties:
+      condition:
+        description: Simple expression or key
+        example: age >= 18
+        type: string
+      next_step:
+        example: adult_step
+        type: string
+    type: object
+  dto.ConnectorPolicy:
+    properties:
+      max_retries:
+        example: 3
+        type: integer
+      retry_backoff_ms:
+        example: 1000
+        type: integer
+      timeout_ms:
+        example: 5000
+        type: integer
+    type: object
+  dto.CreateConnectorConfigRequest:
+    properties:
+      config:
+        additionalProperties:
+          type: string
+        description: Config contains sensitive data like API keys or specific headers
+        example:
+          api_key: sk_live_123456
+          client_secret: abcde
+        type: object
+      connector_id:
+        example: 1
+        type: integer
+      environment:
+        example: production
+        type: string
+    required:
+    - connector_id
+    - environment
+    type: object
+  dto.CreateConnectorRequest:
+    properties:
+      auth_type:
+        allOf:
+        - $ref: '#/definitions/domain.AuthType'
+        example: API_KEY
+      base_url:
+        example: https://api.pdf-service.com/v1
+        type: string
+      name:
+        example: PDF Generator Service
+        type: string
+      policy:
+        allOf:
+        - $ref: '#/definitions/dto.ConnectorPolicy'
+        description: 'Policy defines resilience settings: timeouts, retries, etc.'
+      schema:
+        additionalProperties:
+          type: string
+        description: |-
+          Schema defines the expected input parameters for this connector using JSON Schema
+          This tells the flow designer what data is needed to call this service (e.g., template_id, user_data)
+        example:
+          properties: '{template_id:{type:string}'
+          required: '[template_id]'
+          type: object
+          user_data: '{type:object}}'
+        type: object
+      type:
+        allOf:
+        - $ref: '#/definitions/domain.ConnectorType'
+        example: REST
+    required:
+    - auth_type
+    - name
+    - type
+    type: object
+  dto.CreateFlowRequest:
+    properties:
+      definition:
+        $ref: '#/definitions/domain.FlowDefinition'
+      description:
+        example: Employee onboarding flow with document verification
+        type: string
+      name:
+        example: Onboarding Process
+        type: string
+    required:
+    - definition
+    - name
+    type: object
+  dto.GenerateFlowRequest:
+    properties:
+      prompt:
+        example: Create a flow that asks for email and sends a welcome message using
+          the REST connector
+        type: string
+    required:
+    - prompt
+    type: object
+  dto.GenerateFlowResponse:
+    properties:
+      connectors:
+        items:
+          $ref: '#/definitions/domain.Connector'
+        type: array
+      explanation:
+        type: string
+      flow:
+        $ref: '#/definitions/domain.Flow'
+      missing_info:
+        items:
+          type: string
+        type: array
+    type: object
+  dto.StartFlowRequest:
+    properties:
+      input:
+        additionalProperties:
+          type: string
+        example:
+          campaign_id: summer_2024
+          referrer: web_portal
+        type: object
+    type: object
+  dto.SubmitStepRequest:
+    properties:
+      data:
+        additionalProperties:
+          type: string
+        example:
+          age: "30"
+          email: john@example.com
+          name: John Doe
+        type: object
+    required:
+    - data
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: API for managing connectors and executing flows step-by-step.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Extended Flow Management System API
+  version: "1.0"
+paths:
+  /ai/generate:
+    post:
+      consumes:
+      - application/json
+      description: Uses AI to convert a text description into a structured Flow definition,
+        suggesting Connectors and identifying missing information.
+      parameters:
+      - description: Natural Language Prompt
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.GenerateFlowRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.GenerateFlowResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Generate a Flow from Natural Language
+      tags:
+      - ai
+  /connectors:
+    get:
+      description: Get a list of all registered connectors
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Connector'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List all connectors
+      tags:
+      - connectors
+    post:
+      consumes:
+      - application/json
+      description: Register a new external service. The 'schema' field defines the
+        input contract, and 'policy' defines resilience settings.
+      parameters:
+      - description: Connector definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateConnectorRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Connector'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new connector
+      tags:
+      - connectors
+  /connectors/config:
+    post:
+      consumes:
+      - application/json
+      description: Configure environment-specific secrets (e.g., API keys) for a connector.
+      parameters:
+      - description: Connector Secrets
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateConnectorConfigRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.ConnectorConfig'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create connector configuration
+      tags:
+      - connectors
+  /executions/{uuid}:
+    get:
+      description: Get full details of an execution including data and steps history
+      parameters:
+      - description: Execution UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Execution'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get execution details
+      tags:
+      - execution
+  /executions/{uuid}/retry:
+    post:
+      consumes:
+      - application/json
+      description: Retry a failed execution from the current step, optionally updating
+        input data
+      parameters:
+      - description: Execution UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: New Input Data to merge
+        in: body
+        name: request
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Execution'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Retry a failed execution
+      tags:
+      - execution
+  /executions/{uuid}/step:
+    get:
+      description: Get the definition and JSON schema for the current step. Use this
+        to render the form on the frontend.
+      parameters:
+      - description: Execution UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Step'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get current step definition
+      tags:
+      - execution
+    post:
+      consumes:
+      - application/json
+      description: Validate and submit data for the current step. If successful, advances
+        the flow to the next step.
+      parameters:
+      - description: Execution UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Form Data matching the step schema
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.SubmitStepRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.Execution'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Submit step data
+      tags:
+      - execution
+  /flows:
+    get:
+      description: Get a list of all available flow definitions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Flow'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List all flows
+      tags:
+      - flow-management
+    post:
+      consumes:
+      - application/json
+      description: Define a new flow with its steps, schema, and transitions. The
+        'definition' field must follow the FlowDefinition structure.
+      parameters:
+      - description: Flow Definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateFlowRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Flow'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new Flow Definition
+      tags:
+      - flow-management
+  /flows/{id}/start:
+    post:
+      consumes:
+      - application/json
+      description: Start a new instance of a flow. Returns the Execution ID (UUID)
+        needed for subsequent steps.
+      parameters:
+      - description: Flow ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Initial input parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.StartFlowRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.Execution'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Start a flow execution
+      tags:
+      - execution
+swagger: "2.0"
