@@ -1,18 +1,21 @@
+# STAGE 1: Builder
 FROM golang:alpine AS builder
 WORKDIR /app
+# Instalamos dependencias de compilación
+RUN apk add --no-cache gcc musl-dev
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# Instalamos GCC para que SQLite compile nativamente
-RUN apk add --no-cache gcc musl-dev
+# Compilamos el binario para Linux
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o flows-server ./cmd/server
 
+# STAGE 2: Runtime
 FROM alpine:latest
 WORKDIR /app
+# Certificados para llamadas HTTPS externas (WhatsApp API)
 RUN apk add --no-cache ca-certificates
+# SÓLO copiamos el binario, NO la base de datos sqlite
 COPY --from=builder /app/flows-server .
-COPY --from=builder /app/flows.db . 
+
 EXPOSE 8080
-ENV DB_DRIVER=sqlite
-ENV DB_PATH=/app/flows.db
 CMD ["./flows-server"]

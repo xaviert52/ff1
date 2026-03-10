@@ -1,11 +1,41 @@
 version: '3.8'
+
 services:
+  # Motor de Base de Datos Industrial
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: flows_postgres
+    environment:
+      POSTGRES_USER: flows_user
+      POSTGRES_PASSWORD: flows_password
+      POSTGRES_DB: flows_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flows_user -d flows_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Orquestador FF1
   flows:
     build: .
+    container_name: flows-flows-1
+    depends_on:
+      - postgres_db
     ports:
       - "8080:8080"
-    env_file:
-      - .env
+    environment:
+      - PORT=8080
+      - DB_DRIVER=postgres
+      - DB_DSN=host=flows_postgres user=flows_user password=flows_password dbname=flows_db port=5432 sslmode=disable
+      - DB_PATH= 
     extra_hosts:
-      # Esto permite que el contenedor se comunique con tu localhost de Windows
       - "host.docker.internal:host-gateway"
+    networks:
+      - flows_flows_network
+
+volumes:
+  postgres_data:
