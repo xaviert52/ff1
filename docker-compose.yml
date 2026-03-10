@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  flows:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    extra_hosts:
+      # Esto permite que el contenedor se comunique con tu localhost de Windows
+      - "host.docker.internal:host-gateway"
