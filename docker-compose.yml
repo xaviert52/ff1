@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # Motor de Base de Datos Industrial
   postgres_db:
     image: postgres:15-alpine
     container_name: flows_postgres
@@ -13,13 +10,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flows_user -d flows_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+    networks:
+      - flows_network
 
-  # Orquestador FF1
   flows:
     build: .
     container_name: flows-flows-1
@@ -30,12 +23,16 @@ services:
     environment:
       - PORT=8080
       - DB_DRIVER=postgres
-      - DB_DSN=host=flows_postgres user=flows_user password=flows_password dbname=flows_db port=5432 sslmode=disable
-      - DB_PATH= 
+      - DB_DSN=host=postgres_db user=flows_user password=flows_password dbname=flows_db port=5432 sslmode=disable
+      - DB_PATH= # Anulamos el default del código
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - flows_flows_network
+      - flows_network
 
 volumes:
   postgres_data:
+
+networks:
+  flows_network:
+    driver: bridge
