@@ -42,13 +42,13 @@ func NewDB() (*gorm.DB, error) {
 	}
 
 	// SetMaxIdleConns establece el número máximo de conexiones en el pool de conexiones inactivas.
-	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxIdleConns(20)
 
 	// SetMaxOpenConns establece el número máximo de conexiones abiertas a la base de datos.
-	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetMaxOpenConns(90)
 
 	// SetConnMaxLifetime establece la cantidad máxima de tiempo que una conexión puede ser reutilizada.
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxLifetime(time.Minute * 5)
 
 	// Auto Migrate the schema
 	err = db.AutoMigrate(
