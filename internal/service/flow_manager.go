@@ -124,18 +124,23 @@ func (m *FlowManager) StartFlow(flowID uint, input map[string]interface{}) (*dom
 	// Auto-advance if start step is ACTION or DECISION
 	startStep := definition.Steps[definition.StartStep]
 	if startStep.Type == domain.StepTypeAction || startStep.Type == domain.StepTypeDecision {
-		log.Printf("[FlowManager] Start step '%s' is automatic (%s). Auto-advancing...", startStep.ID, startStep.Type)
-		// Trigger SubmitStep. Input is empty because mapping should pull from global Data.
-		// We ignore the returned execution because we return the final state anyway.
-		// However, if SubmitStep fails, we should return the error or the failed execution.
-		advancedExec, err := m.SubmitStep(exec.ID, []byte("{}"))
-		if err != nil {
-			log.Printf("[FlowManager] Auto-advance failed: %v", err)
-			// Return the execution (which should be in FAILED state) and the error
-			return advancedExec, err // Or maybe just return advancedExec and let caller see status?
-			// Standard practice: if it fails, return error.
-		}
-		return advancedExec, nil
+		log.Printf("[FlowManager] Start step '%s' is automatic (%s). Executing asynchronously...", startStep.ID, startStep.Type)
+
+		// 1. Marcamos el flujo como en ejecución
+		exec.Status = domain.StatusRunning
+		m.DB.Save(exec)
+
+		// 2. Lanzamos el procesamiento en segundo plano (Goroutine)
+		go func(executionID string) {
+			// El input está vacío porque el mapping extraerá del global Data
+			_, err := m.SubmitStep(executionID, []byte("{}"))
+			if err != nil {
+				log.Printf("[FlowManager] Async execution failed for %s: %v", executionID, err)
+			}
+		}(exec.ID)
+
+		// 3. Devolvemos la respuesta al cliente inmediatamente (Latencia de red pura + DB Insert)
+		return exec, nil
 	}
 
 	return exec, nil
@@ -192,7 +197,6 @@ func (m *FlowManager) RetryExecution(execID string, newData map[string]interface
 
 	// Update global data if provided
 	if len(newData) > 0 {
-		// Merge with existing data
 		var currentData map[string]interface{}
 		json.Unmarshal(exec.Data, &currentData)
 		if currentData == nil {
@@ -205,7 +209,6 @@ func (m *FlowManager) RetryExecution(execID string, newData map[string]interface
 		exec.Data = dataJSON
 	}
 
-	// Reset status to Running
 	exec.Status = domain.StatusRunning
 	exec.UpdatedAt = time.Now()
 	if err := m.DB.Save(&exec).Error; err != nil {
@@ -216,12 +219,6 @@ func (m *FlowManager) RetryExecution(execID string, newData map[string]interface
 		m.SubscriptionClient.SendStatus(&exec)
 	}
 
-	// Trigger execution of the current step
-	// We pass empty input because for ACTION steps (usually where it fails),
-	// input is derived from mapping. If it was a FORM step, user should have used SubmitStep.
-	// But if retry is for a FORM step that failed validation internally (unlikely to persist as FAILED),
-	// or an ACTION step.
-	// We assume retry is mostly for ACTION steps.
 	return m.SubmitStep(exec.ID, []byte("{}"))
 }
 
@@ -236,101 +233,86 @@ func (m *FlowManager) GetExecutionDetails(execID string) (*domain.Execution, err
 
 // SubmitStep processes input for the current step and advances the flow
 func (m *FlowManager) SubmitStep(execID string, input json.RawMessage) (*domain.Execution, error) {
-	// Loop to handle consecutive automatic steps
+	// 1. OBTENER DATOS UNA SOLA VEZ FUERA DEL BUCLE (Optimización extrema)
+	var exec domain.Execution
+	if err := m.DB.First(&exec, "id = ?", execID).Error; err != nil {
+		return nil, err
+	}
+
+	var flow domain.Flow
+	if err := m.DB.First(&flow, exec.FlowID).Error; err != nil {
+		return nil, err
+	}
+
+	var definition domain.FlowDefinition
+	if err := json.Unmarshal(flow.Definition, &definition); err != nil {
+		return nil, err
+	}
+
+	// 2. Loop para manejar pasos automáticos consecutivos EN MEMORIA
 	for {
-		log.Printf("[FlowManager] Processing loop for execution %s", execID)
-		step, exec, err := m.GetCurrentStep(execID)
-		if err != nil {
-			log.Printf("[FlowManager] Error getting current step: %v", err)
-			return nil, err
+		log.Printf("[FlowManager] Processing loop for execution %s", exec.ID)
+
+		step, ok := definition.Steps[exec.CurrentStep]
+		if !ok {
+			return nil, fmt.Errorf("step %s not found in definition", exec.CurrentStep)
 		}
+
 		log.Printf("[FlowManager] Current step: %s (Type: %s)", step.ID, step.Type)
 
-		// 0. Resolve Input Mapping
+		// --- Resolución de Input Mapping ---
 		if len(step.InputMapping) > 0 {
-			log.Printf("[FlowManager] Resolving Input Mapping for step %s...", step.ID)
-			// Prepare context for mapping (global input + previous steps data)
 			mappingContext := make(map[string]interface{})
 
-			// Load global input
 			var globalInput map[string]interface{}
 			json.Unmarshal(exec.Data, &globalInput)
 			mappingContext["global"] = globalInput
 
-			// Load steps data
 			var stepsData map[string]interface{}
 			json.Unmarshal(exec.StepsData, &stepsData)
 			mappingContext["steps"] = stepsData
 
-			// Load current input (if any)
 			var currentInputMap map[string]interface{}
 			json.Unmarshal(input, &currentInputMap)
 			mappingContext["input"] = currentInputMap
 
 			mappedInput := make(map[string]interface{})
 			for k, v := range step.InputMapping {
-				// Handle both string templates and direct values
 				if strVal, ok := v.(string); ok {
-					val := resolveTemplate(strVal, mappingContext)
-					mappedInput[k] = val
-					log.Printf("[FlowManager] Mapped '%s' -> '%v'", k, val)
+					mappedInput[k] = resolveTemplate(strVal, mappingContext)
 				} else {
 					mappedInput[k] = v
-					log.Printf("[FlowManager] Mapped (direct) '%s' -> '%v'", k, v)
 				}
 			}
-
-			// Reassign input!
 			mappedBytes, _ := json.Marshal(mappedInput)
 			input = mappedBytes
-			log.Printf("[FlowManager] New Input: %s", string(input))
-		} else {
-			log.Printf("[FlowManager] No Input Mapping defined. Using raw input.")
 		}
 
-		// 1. Process Logic based on Step Type
+		// --- Ejecución del Paso ---
 		var outputData json.RawMessage
 
 		switch step.Type {
 		case domain.StepTypeForm:
-			log.Printf("[FlowManager] Validating FORM input...")
-			// Validate User Input
-			// Convert map schema to json.RawMessage for validator
 			schemaJSON, _ := json.Marshal(step.Schema)
 			if err := m.StepValidator.Validate(schemaJSON, input); err != nil {
-				log.Printf("[FlowManager] Validation failed: %v", err)
 				return nil, fmt.Errorf("validation error: %w", err)
 			}
 			outputData = input
-			log.Printf("[FlowManager] Form Validated.")
 
 		case domain.StepTypeAction:
-			// Execute Connector
-			if step.ConnectorID == 0 {
-				return nil, errors.New("action step missing connector_id")
-			}
-
-			log.Printf("[FlowManager] Executing Connector ID %d...", step.ConnectorID)
 			result, err := m.ConnectorService.ExecuteConnector(step.ConnectorID, input, "development", step.Config)
 			if err != nil {
-				log.Printf("[FlowManager] Connector execution failed: %v", err)
 				exec.Status = domain.StatusFailed
-				m.DB.Save(exec)
-				if m.SubscriptionClient != nil {
-					m.SubscriptionClient.SendStatus(exec)
-				}
+				m.DB.Save(&exec) // Solo guardamos si hay un error fatal
 				return nil, fmt.Errorf("connector failed: %w", err)
 			}
-			log.Printf("[FlowManager] Connector success. Result: %s", string(result))
 			outputData = result
 
 		case domain.StepTypeDecision:
-			// Decision logic usually doesn't produce output, but evaluates transitions
 			outputData = input
-			log.Printf("[FlowManager] Decision step processed.")
 		}
 
-		// 2. Update Execution Data
+		// --- Actualizar Estado EN MEMORIA ---
 		var currentStepsData map[string]interface{}
 		json.Unmarshal(exec.StepsData, &currentStepsData)
 		if currentStepsData == nil {
@@ -344,15 +326,10 @@ func (m *FlowManager) SubmitStep(execID string, input json.RawMessage) (*domain.
 		newStepsData, _ := json.Marshal(currentStepsData)
 		exec.StepsData = newStepsData
 
-		// 3. Determine Next Step
+		// --- Evaluar Transiciones ---
 		nextStepID := step.NextStep
 
-		// Check conditional transitions
 		if len(step.Transitions) > 0 {
-			log.Printf("[FlowManager] Evaluating transitions...")
-
-			// Re-create mapping context if needed (it was local to InputMapping block)
-			// Or better, define it outside. For now, let's just recreate it quickly.
 			transitionContext := make(map[string]interface{})
 
 			var globalInput map[string]interface{}
@@ -363,39 +340,23 @@ func (m *FlowManager) SubmitStep(execID string, input json.RawMessage) (*domain.
 			json.Unmarshal(exec.StepsData, &stepsData)
 			transitionContext["steps"] = stepsData
 
-			// Include current output as "input" for next steps or condition?
-			// Usually conditions check steps data.
-			// Let's add current outputData as "output"
 			var currentOutput map[string]interface{}
 			json.Unmarshal(outputData, &currentOutput)
 			transitionContext["output"] = currentOutput
 
 			for _, t := range step.Transitions {
-				// Evaluate condition
-				// Resolve variables in condition string
 				resolvedCondition := resolveTemplate(t.Condition, transitionContext)
-
-				// Very basic evaluation: check if string is "true" or matches equality
-				// Since we don't have an expression engine yet, let's implement basic "A == B"
 				conditionStr := fmt.Sprintf("%v", resolvedCondition)
-				log.Printf("[FlowManager] Checking condition: %s (resolved: %s)", t.Condition, conditionStr)
 
-				// Handle "true" literal
 				if conditionStr == "true" {
 					nextStepID = t.NextStep
-					log.Printf("[FlowManager] Condition matched (true)! Next step: %s", nextStepID)
 					break
 				}
-
-				// Handle "A == B"
 				if strings.Contains(conditionStr, "==") {
 					parts := strings.Split(conditionStr, "==")
 					if len(parts) == 2 {
-						left := strings.TrimSpace(parts[0])
-						right := strings.TrimSpace(parts[1])
-						if left == right {
+						if strings.TrimSpace(parts[0]) == strings.TrimSpace(parts[1]) {
 							nextStepID = t.NextStep
-							log.Printf("[FlowManager] Condition matched (%s == %s)! Next step: %s", left, right, nextStepID)
 							break
 						}
 					}
@@ -403,48 +364,35 @@ func (m *FlowManager) SubmitStep(execID string, input json.RawMessage) (*domain.
 			}
 		}
 
-		log.Printf("[FlowManager] Moving to next step: '%s'", nextStepID)
-
-		// 4. Advance
+		// --- Avance y Guardado en DB (SOLO CUANDO SE DETIENE EL FLUJO) ---
 		if nextStepID == "" {
 			exec.Status = domain.StatusCompleted
 			exec.CurrentStep = ""
 			exec.UpdatedAt = time.Now()
-			m.DB.Save(exec)
+
+			m.DB.Save(&exec) // GUARDADO FINAL
 			if m.SubscriptionClient != nil {
-				m.SubscriptionClient.SendStatus(exec)
+				m.SubscriptionClient.SendStatus(&exec)
 			}
-			log.Printf("[FlowManager] Execution COMPLETED.")
-			return exec, nil // Finish
-		} else {
-			exec.CurrentStep = nextStepID
-			exec.Status = domain.StatusRunning
-			exec.UpdatedAt = time.Now()
-			m.DB.Save(exec)
-
-			if m.SubscriptionClient != nil {
-				m.SubscriptionClient.SendStatus(exec)
-			}
-
-			// Check next step type
-			nextStepDef, _, err := m.GetCurrentStep(exec.ID)
-			if err != nil {
-				return nil, err
-			}
-
-			if nextStepDef.Type == domain.StepTypeForm {
-				exec.Status = domain.StatusWaiting
-				exec.UpdatedAt = time.Now()
-				m.DB.Save(exec)
-				if m.SubscriptionClient != nil {
-					m.SubscriptionClient.SendStatus(exec)
-				}
-				log.Printf("[FlowManager] Execution WAITING for user input (Form).")
-				return exec, nil // Return to user
-			}
-
-			// Prepare input for next step
-			input = outputData
+			return &exec, nil
 		}
+
+		exec.CurrentStep = nextStepID
+		exec.Status = domain.StatusRunning
+		exec.UpdatedAt = time.Now()
+
+		nextStepDef := definition.Steps[nextStepID]
+		if nextStepDef.Type == domain.StepTypeForm {
+			exec.Status = domain.StatusWaiting
+
+			m.DB.Save(&exec) // GUARDADO PARCIAL (El flujo hace una pausa manual)
+			if m.SubscriptionClient != nil {
+				m.SubscriptionClient.SendStatus(&exec)
+			}
+			return &exec, nil
+		}
+
+		// Prepara el input para el siguiente paso automático en el bucle
+		input = outputData
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"flows/internal/domain"
 	"fmt"
 	"os"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -18,7 +19,9 @@ func NewDB() (*gorm.DB, error) {
 	dsn := os.Getenv("DB_DSN")
 
 	if driver == "postgres" {
-		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+			PrepareStmt: true, // Mejora rendimiento al cachear sentencias SQL
+		})
 	} else {
 		// Fallback por defecto a SQLite si no hay driver especificado
 		dbPath := os.Getenv("DB_PATH")
@@ -31,6 +34,21 @@ func NewDB() (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect database: %w", err)
 	}
+
+	// Configuración del Pool de Conexiones
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generic database object: %w", err)
+	}
+
+	// SetMaxIdleConns establece el número máximo de conexiones en el pool de conexiones inactivas.
+	sqlDB.SetMaxIdleConns(10)
+
+	// SetMaxOpenConns establece el número máximo de conexiones abiertas a la base de datos.
+	sqlDB.SetMaxOpenConns(100)
+
+	// SetConnMaxLifetime establece la cantidad máxima de tiempo que una conexión puede ser reutilizada.
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	// Auto Migrate the schema
 	err = db.AutoMigrate(

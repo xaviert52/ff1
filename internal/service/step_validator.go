@@ -15,8 +15,9 @@ func NewStepValidator() *StepValidator {
 }
 
 func (v *StepValidator) Validate(schemaJSON json.RawMessage, dataJSON json.RawMessage) error {
-	if len(schemaJSON) == 0 {
-		return nil // No schema means no validation required
+	// Cambia esta condición para manejar nulos y vacíos correctamente
+	if len(schemaJSON) == 0 || string(schemaJSON) == "null" || string(schemaJSON) == "" {
+		return nil // Si no hay esquema o es null, no se requiere validación
 	}
 
 	compiler := jsonschema.NewCompiler()
